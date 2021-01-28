@@ -9,9 +9,19 @@ shinyUI(fluidPage(
     #título ----
     fluidRow(
         column(12,
-               h1("Relacionador Casen"),
-               p("Esta herramienta permite relacionar datos socioeconómicos cuantitativos de la encuesta Casen 2017."),
+               h1("Relacionador Casen COVID-19"),
+               p("Esta herramienta permite relacionar datos socioeconómicos cuantitativos de la encuesta Casen 2017 con los datos más actualizados del COVID-19."),
                p("Utilice los botones presentados a continuación para seleccionar las variables que le interesa graficar."),
+               
+               HTML("<p>Los datos de COVID-19 son obtenidos desde la 
+               <a href='https://github.com/datauc/api-covid19-datauc' 
+                       style='color: #999999'>
+                    API COVID-19</a> de DataUC. 
+               Para más visualizaciones sobre el Coronavirus en Chile, visite el 
+                    <a href='https://coronavirus.mat.uc.cl/' 
+                       style='color: #999999'>
+                    Visualizador COVID-19 Chile</a></p>"),
+               
         #Por ejemplo, seleccionar 'Mujeres' y 'Pobreza extrema' resultará en la cantidad de población que corresponde a dicho grupo social, junto a otros datos tales como sus ingresos."),
                hr(),
         )
@@ -104,8 +114,32 @@ shinyUI(fluidPage(
                br(),
                hr(),
                plotOutput("grafico", height = "640px") %>% shinycssloaders::withSpinner()
+        ),
+        column(12,
+               hr(),
+               div(style = "display: inline-block;", em("Casos nuevos actualizados al: ")),
+               div(style = "display: inline-block;", textOutput("fecha_maxima_nuevos")),
+               br(),
+               
+               div(style = "display: inline-block;", em("Casos activos actualizados al: ")),
+               div(style = "display: inline-block;", textOutput("fecha_maxima_activos")),
+               br(),
+               
+               div(style = "display: inline-block;", em("Casos incrementales actualizados al: ")),
+               div(style = "display: inline-block;", textOutput("fecha_maxima_incremental"))
         )
+               
     ),
+    
+    
+    # #tabla ----
+    # fluidRow(    
+    #     column(12,
+    #            br(),
+    #            hr(),
+    #            formattableOutput("tabla", height = "640px") %>% shinycssloaders::withSpinner()
+    #     )
+    # ),
     
     #footer ----
     fluidRow(

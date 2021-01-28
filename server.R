@@ -1,5 +1,98 @@
 shinyServer(function(input, output, session) {
 
+  #datos covid ----
+  #descargar los datos de covid: https://github.com/datauc/api-covid19-datauc
+  
+  #Producto 1: Casos totales por comuna incremental https://coronavirus-api.mat.uc.cl/casos_totales_comuna_incremental
+  casos_comuna_incremental <- reactive({
+  casos_comuna_incremental <- readr::read_csv("https://coronavirus-api.mat.uc.cl/casos_totales_comuna_incremental")
+  })
+  
+  #Producto 19: Casos activos por fecha de inicio de síntomas y comuna https://coronavirus-api.mat.uc.cl/casos_activos_sintomas_comuna
+  casos_comuna_activos <- reactive({
+  casos_comuna_activos <- readr::read_csv("https://coronavirus-api.mat.uc.cl/casos_activos_sintomas_comuna")
+  })
+  
+  #Producto 15: Casos nuevos por fecha de inicio de síntomas por comuna https://coronavirus-api.mat.uc.cl/casos_nuevos_sintomas_comuna
+  casos_comuna_nuevos <- reactive({
+  casos_comuna_nuevos <- readr::read_csv("https://coronavirus-api.mat.uc.cl/casos_nuevos_sintomas_comuna")
+  })
+  
+  #texto de fechas ----
+  output$fecha_maxima_nuevos <- renderText({
+    paste(format(casos_comuna_nuevos() %>%
+                       filter(!is.na(inicio_semana_epidemiologica)) %>%
+                       filter(inicio_semana_epidemiologica != max(inicio_semana_epidemiologica)) %>%
+                       filter(inicio_semana_epidemiologica == max(inicio_semana_epidemiologica)) %>%
+                       select(fin_semana_epidemiologica) %>%
+                       distinct() %>% pull(), "%d/%m/%Y"))
+  })
+  
+  output$fecha_maxima_activos <- renderText({
+    paste(format(max(casos_comuna_activos()$fecha), "%d/%m/%Y"))
+  })
+  
+  output$fecha_maxima_incremental <- renderText({
+    paste(format(max(casos_comuna_incremental()$fecha), "%d/%m/%Y"))
+  })
+                                         
+                                         
+    casen_datos_covid <- reactive({
+      
+                
+        covid_comuna_incremental <- casos_comuna_incremental() %>%
+            filter(region == "Metropolitana") %>%
+            filter(!is.na(casos)) %>%
+            filter(fecha == max(fecha)) %>%
+            select(comuna, fecha, casos) %>%
+            mutate(casos_comuna_incremental = as.numeric(casos)) %>%
+            select(-casos)
+        
+                                               
+        covid_comuna_activos <- casos_comuna_activos() %>%
+            filter(region == "Metropolitana") %>%
+            filter(!is.na(casos)) %>%
+            filter(!is.na(fecha)) %>%
+            filter(fecha == max(fecha)) %>%
+            select(comuna, casos) %>%
+            mutate(casos_comuna_activos = as.numeric(casos)) %>%
+            select(-casos)
+        
+        
+        covid_comuna_nuevos <- casos_comuna_nuevos() %>%
+            filter(region == "Metropolitana") %>%
+            filter(!is.na(casos)) %>%
+            filter(!is.na(inicio_semana_epidemiologica)) %>%
+            filter(inicio_semana_epidemiologica != max(inicio_semana_epidemiologica)) %>%
+            filter(inicio_semana_epidemiologica == max(inicio_semana_epidemiologica)) %>%
+            select(comuna, inicio_semana_epidemiologica, fin_semana_epidemiologica, semana_epidemiologica, casos) %>%
+            mutate(casos_comuna_nuevos = as.numeric(casos)) %>%
+            select(-casos)
+        
+        #unir datos covid con datos casen
+        casen_datos_covid <- casen_datos %>%
+            mutate(comuna_match = iconv(tolower(comuna), from = 'UTF-8', to = 'ASCII//TRANSLIT')) %>%
+            left_join(covid_comuna_nuevos %>%
+                          mutate(comuna_match = iconv(tolower(comuna), from = 'UTF-8', to = 'ASCII//TRANSLIT')) %>%
+                      select(-comuna),
+                        by = "comuna_match") %>%
+            left_join(covid_comuna_incremental %>%
+                          mutate(comuna_match = iconv(tolower(comuna), from = 'UTF-8', to = 'ASCII//TRANSLIT')) %>%
+                      select(-comuna),
+                        by = "comuna_match") %>%
+            left_join(covid_comuna_activos %>%
+                          mutate(comuna_match = iconv(tolower(comuna), from = 'UTF-8', to = 'ASCII//TRANSLIT')) %>%
+                      select(-comuna),
+                        by = "comuna_match") %>%
+          #rename(comuna = comuna.x) %>%
+          select(-c(comuna_match, fecha)) %>%
+          select(-c(semana_epidemiologica, inicio_semana_epidemiologica, fin_semana_epidemiologica))
+        
+        glimpse(casen_datos_covid)
+        
+        return(casen_datos_covid)
+    })
+    
     output$selector_y <- renderText({ input$selector_y })
     output$selector_x <- renderText({ input$selector_x })
     
@@ -63,7 +156,7 @@ shinyServer(function(input, output, session) {
     #gráfico ----
     output$grafico <- renderPlot({
         
-        req(casen_datos)
+        req(casen_datos_covid())
         req(input$selector_y)
         
         #variables del gráfico ----
@@ -80,21 +173,21 @@ shinyServer(function(input, output, session) {
         
         #estética ----
         aes_mapping <- aes_string(
-            x = variable_x,
-            y = variable_y,
-            col = variable_col,
-            size = variable_size
+          x = variable_x,
+          y = variable_y,
+          col = variable_col,
+          size = variable_size
         )
         
         #ggplot ----
-        p <- casen_datos %>%
+        p <- casen_datos_covid() %>%
             #crear columnas de promedio/mediana
-            tidyr::pivot_wider(names_from = tipo, values_from = 2:22) %>%
+            tidyr::pivot_wider(names_from = tipo, values_from = 2:25) %>%
             #seleccionar variables y tipos elegidos
             select(comuna, 
                    paste(variable_x, tipo_elegido_x, sep="_"), 
                    paste(variable_y, tipo_elegido_y, sep="_"),
-                   all_of(variable_col),
+                   #all_of(variable_col),
                    paste(variable_size, tipo_elegido_size, sep="_")) %>%
             rename_all(list(~ stringr::str_remove(., "_promedio"))) %>%
             rename_all(list(~ stringr::str_remove(., "_mediana"))) %>%
@@ -115,7 +208,7 @@ shinyServer(function(input, output, session) {
             scale_x_continuous(labels = function(x) format(x, big.mark = ".", decimal.mark = ",")) +
             #viridis::scale_color_viridis(discrete = TRUE, option = "magma") +
             #fishualize::scale_color_fish(option = "Oncorhynchus_tshawytscha", discrete = TRUE) +
-            rcartocolor::scale_color_carto_d(type = "qualitative", 
+            rcartocolor::scale_color_carto_d(type = "qualitative",
                                              #palette = "Sunset"
                                              #palette = "Vivid"
                                              palette = "Pastel"
@@ -145,6 +238,41 @@ shinyServer(function(input, output, session) {
         return(p)
         
     })
+    
+    
+    # #tabla ----
+    # 
+    # output$tabla <- renderFormattable({
+    #   req(input$selector_y)
+    #   
+    #   #variables del gráfico ----
+    #   variable_y = input$selector_y #"ytotcorh"
+    #   variable_x = input$selector_x #"numper"
+    #   variable_col = "comuna"
+    #   variable_size = input$selector_size #"s4"
+    #   
+    #   comunas_elegidas <- input$selector_comunas#c("La Florida", "Puente Alto", "Vitacura")
+    #   
+    #   tipo_elegido_x = input$tipo_elegido_x #"promedio"
+    #   tipo_elegido_y = input$tipo_elegido_y #"promedio"
+    #   tipo_elegido_size = input$tipo_elegido_size #"mediana"
+    #   
+    #   
+    #   t <- casen_datos_covid() %>%
+    #     #crear columnas de promedio/mediana
+    #     tidyr::pivot_wider(names_from = tipo, values_from = 2:25) %>%
+    #     #seleccionar variables y tipos elegidos
+    #     select(comuna, 
+    #            paste(variable_x, tipo_elegido_x, sep="_"), 
+    #            paste(variable_y, tipo_elegido_y, sep="_"),
+    #            all_of(variable_col),
+    #            paste(variable_size, tipo_elegido_size, sep="_")) %>%
+    #     rename_all(list(~ stringr::str_remove(., "_promedio"))) %>%
+    #     rename_all(list(~ stringr::str_remove(., "_mediana"))) %>% 
+    #     formattable()
+    # 
+    #   t
+    # })
     
     
     # output$alerta_repetidas <- renderText({
